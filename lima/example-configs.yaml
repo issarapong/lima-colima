@@ -1,0 +1,377 @@
+# ตัวอย่าง Lima Configuration File
+# บันทึกไฟล์นี้เป็น my-vm.yaml และใช้คำสั่ง: limactl start my-vm.yaml
+
+# ========================================
+# ตัวอย่างที่ 1: Basic Ubuntu VM
+# ========================================
+# images: เลือก VM image ที่จะใช้
+images:
+  # ลองใช้ image ตัวแรกที่มี arch ตรงกับ host
+  - location: "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img"
+    arch: "x86_64"
+    digest: "sha256:..."  # ระบุ checksum เพื่อความปลอดภัย (optional)
+  - location: "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-arm64.img"
+    arch: "aarch64"
+
+# ตั้งค่า CPU และ Memory
+cpus: 4
+memory: "8GiB"
+disk: "100GiB"
+
+# ตั้งค่า architecture
+# arch: "x86_64"  # หรือ "aarch64" สำหรับ ARM64
+# arch: "host"  # ใช้ arch เดียวกับ host (default)
+
+# ========================================
+# File Sharing (Mount directories)
+# ========================================
+mounts:
+  - location: "~"
+    writable: true
+  - location: "/tmp/lima"
+    writable: true
+
+# mountType: "reverse-sshfs" หรือ "9p" หรือ "virtiofs"
+mountType: "reverse-sshfs"
+
+# ========================================
+# SSH Configuration
+# ========================================
+ssh:
+  localPort: 0  # 0 = เลือก port ว่างอัตโนมัติ
+  loadDotSSHPubKeys: true  # โหลด SSH keys จาก ~/.ssh/*.pub
+
+# ========================================
+# ตั้งค่า Containerd/Docker
+# ========================================
+containerd:
+  system: false  # false = ติดตั้งใน user namespace
+  user: true     # true = ให้ user สามารถใช้งานได้โดยไม่ต้อง sudo
+
+# ========================================
+# Port Forwarding
+# ========================================
+portForwards:
+  - guestPort: 80
+    hostPort: 8080
+    proto: tcp
+  - guestPort: 443
+    hostPort: 8443
+    proto: tcp
+
+# ========================================
+# Environment Variables
+# ========================================
+env:
+  DOCKER_HOST: "unix:///run/user/1000/containerd/containerd.sock"
+
+# ========================================
+# Provision Scripts
+# ========================================
+provision:
+  # รันสคริปต์เมื่อ boot ครั้งแรก
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      apt-get update
+      apt-get install -y vim curl wget git
+  
+  # รันสคริปต์ในฐานะ user
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      echo "Hello from Lima VM!" > ~/welcome.txt
+
+# ========================================
+# Probe Scripts (ตรวจสอบว่า VM พร้อมใช้งาน)
+# ========================================
+probes:
+  - mode: readiness
+    description: "ตรวจสอบว่า containerd พร้อมใช้งาน"
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      if ! timeout 30s bash -c "until command -v nerdctl >/dev/null 2>&1; do sleep 3; done"; then
+        echo >&2 "nerdctl is not installed yet"
+        exit 1
+      fi
+
+# ========================================
+# Network Configuration
+# ========================================
+networks:
+  - lima: user-v2  # user mode networking (default)
+  # - lima: shared  # shared network (ต้องการ root privileges)
+  # - lima: bridged # bridged network
+
+# ========================================
+# Host Resolver (DNS)
+# ========================================
+hostResolver:
+  enabled: true
+  hosts:
+    host.lima.internal: host.lima.internal
+
+# ========================================
+# การตั้งค่า Video และ Audio
+# ========================================
+video:
+  display: "none"  # "none" หรือ "cocoa" (macOS) หรือ "gtk" (Linux)
+
+# ========================================
+# Firmware (ใช้สำหรับ QEMU)
+# ========================================
+firmware:
+  legacyBIOS: false  # false = ใช้ UEFI
+
+---
+
+# ========================================
+# ตัวอย่างที่ 2: Docker Development VM
+# ========================================
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img"
+    arch: "x86_64"
+  - location: "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-arm64.img"
+    arch: "aarch64"
+
+cpus: 4
+memory: "8GiB"
+disk: "100GiB"
+
+mounts:
+  - location: "~"
+    writable: true
+  - location: "~/Projects"
+    writable: true
+
+containerd:
+  system: false
+  user: true
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      # ติดตั้ง Docker CLI
+      apt-get update
+      apt-get install -y docker.io
+      systemctl disable --now docker
+      
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      # ตั้งค่า Docker context สำหรับ containerd
+      mkdir -p ~/.docker
+      docker context create lima-containerd \
+        --description "Lima Containerd" \
+        --docker "host=unix:///run/user/$(id -u)/containerd/containerd.sock"
+
+portForwards:
+  - guestPort: 80
+    hostPort: 80
+  - guestPort: 443
+    hostPort: 443
+  - guestPort: 3000
+    hostPort: 3000
+  - guestPort: 8080
+    hostPort: 8080
+
+---
+
+# ========================================
+# ตัวอย่างที่ 3: Kubernetes Development VM
+# ========================================
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img"
+    arch: "x86_64"
+  - location: "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-arm64.img"
+    arch: "aarch64"
+
+cpus: 6
+memory: "12GiB"
+disk: "100GiB"
+
+mounts:
+  - location: "~"
+    writable: true
+
+containerd:
+  system: true
+  user: false
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      # ติดตั้ง k3s (lightweight Kubernetes)
+      curl -sfL https://get.k3s.io | sh -s - \
+        --write-kubeconfig-mode 644 \
+        --disable traefik \
+        --flannel-backend=host-gw
+      
+      # ติดตั้ง kubectl
+      curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+      install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+      
+      # ติดตั้ง helm
+      curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      # คัดลอก kubeconfig
+      mkdir -p ~/.kube
+      sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+      sudo chown $(id -u):$(id -g) ~/.kube/config
+
+probes:
+  - mode: readiness
+    description: "ตรวจสอบว่า Kubernetes พร้อมใช้งาน"
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      if ! timeout 300s bash -c "until kubectl get nodes 2>/dev/null; do sleep 3; done"; then
+        echo >&2 "Kubernetes is not ready yet"
+        exit 1
+      fi
+
+portForwards:
+  - guestPort: 6443
+    hostPort: 6443
+  - guestPort: 80
+    hostPort: 80
+  - guestPort: 443
+    hostPort: 443
+
+---
+
+# ========================================
+# ตัวอย่างที่ 4: Minimal VM สำหรับ Testing
+# ========================================
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img"
+    arch: "x86_64"
+
+cpus: 2
+memory: "2GiB"
+disk: "20GiB"
+
+mounts:
+  - location: "~"
+    writable: false  # read-only
+
+containerd:
+  system: false
+  user: false  # ไม่ติดตั้ง containerd
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      apt-get update
+      apt-get install -y curl wget
+
+---
+
+# ========================================
+# ตัวอย่างที่ 5: Development VM พร้อม Tools
+# ========================================
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img"
+    arch: "x86_64"
+  - location: "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-arm64.img"
+    arch: "aarch64"
+
+cpus: 6
+memory: "16GiB"
+disk: "150GiB"
+
+mounts:
+  - location: "~"
+    writable: true
+  - location: "~/Projects"
+    writable: true
+  - location: "~/Downloads"
+    writable: true
+
+containerd:
+  system: false
+  user: true
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      # อัพเดทระบบ
+      apt-get update
+      apt-get upgrade -y
+      
+      # ติดตั้ง development tools
+      apt-get install -y \
+        build-essential \
+        git \
+        vim \
+        tmux \
+        curl \
+        wget \
+        htop \
+        jq \
+        tree \
+        net-tools \
+        iputils-ping \
+        dnsutils \
+        python3 \
+        python3-pip \
+        nodejs \
+        npm
+      
+      # ติดตั้ง Docker CLI
+      apt-get install -y docker.io
+      systemctl disable --now docker
+
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      # ติดตั้ง Oh My Zsh
+      sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended || true
+      
+      # สร้าง workspace directory
+      mkdir -p ~/workspace ~/bin
+      
+      # ตั้งค่า git
+      git config --global init.defaultBranch main
+
+env:
+  EDITOR: "vim"
+  LANG: "en_US.UTF-8"
+
+portForwards:
+  - guestPort: 3000
+    hostPort: 3000
+  - guestPort: 5000
+    hostPort: 5000
+  - guestPort: 8000
+    hostPort: 8000
+  - guestPort: 8080
+    hostPort: 8080
+  - guestPort: 9000
+    hostPort: 9000
+
+# ========================================
+# หมายเหตุ:
+# ========================================
+# 1. บันทึกไฟล์ config เป็น .yaml
+# 2. ใช้คำสั่ง: limactl start --name=<vm-name> <config-file>.yaml
+# 3. แก้ไข config: limactl edit <vm-name>
+# 4. ดูค่าทั้งหมดที่รองรับ: limactl start --list-templates
+# 5. หลังแก้ไข config ต้อง restart VM

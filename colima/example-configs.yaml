@@ -1,0 +1,428 @@
+# ตัวอย่าง Colima Configuration Files
+# บันทึกไฟล์นี้ที่ ~/.colima/default/colima.yaml
+# หรือใช้คำสั่ง: colima edit
+
+# ========================================
+# ตัวอย่างที่ 1: Basic Docker Development
+# ========================================
+# ตั้งค่า CPU และ Memory
+cpu: 4
+memory: 8
+
+# ตั้งค่า Disk (GiB)
+disk: 100
+
+# เลือก architecture
+# "host" = ใช้ arch เดียวกับ host
+# "x86_64" = Intel/AMD 64-bit
+# "aarch64" = ARM 64-bit (Apple Silicon)
+arch: "host"
+
+# เลือก Container Runtime
+# "docker" = Docker (default)
+# "containerd" = containerd with nerdctl CLI
+runtime: "docker"
+
+# VM type
+# "qemu" = QEMU (default, รองรับทุก platform)
+# "vz" = Virtualization.framework (macOS 13+, รวดเร็วกว่า)
+vm_type: "qemu"
+
+# Kubernetes (ปิดไว้ถ้าไม่ใช้)
+kubernetes:
+  enabled: false
+
+# Mount directories
+# default จะ mount home directory อยู่แล้ว
+mounts:
+  - location: "~"
+    writable: true
+  - location: "~/Projects"
+    writable: true
+
+# SSH config
+ssh:
+  forward_agent: true
+
+# Docker socket path
+docker_socket_path: "~/.colima/default/docker.sock"
+
+---
+
+# ========================================
+# ตัวอย่างที่ 2: Docker Development (Performance Optimized)
+# ========================================
+cpu: 6
+memory: 12
+disk: 150
+
+arch: "host"
+runtime: "docker"
+
+# ใช้ Virtualization.framework สำหรับ macOS 13+
+# เร็วกว่า QEMU มาก
+vm_type: "vz"
+
+# Rosetta สำหรับ x86_64 emulation บน Apple Silicon
+# (ใช้ได้เฉพาะ vm_type: vz)
+rosetta: true
+
+kubernetes:
+  enabled: false
+
+mounts:
+  - location: "~"
+    writable: true
+  - location: "~/Projects"
+    writable: true
+  - location: "/tmp"
+    writable: true
+
+# Environment variables
+env:
+  DOCKER_BUILDKIT: "1"
+  COMPOSE_DOCKER_CLI_BUILD: "1"
+
+# DNS configuration
+dns:
+  - 8.8.8.8
+  - 8.8.4.4
+
+# Network configuration
+# รับ IP address จาก VM
+network:
+  address: true
+
+---
+
+# ========================================
+# ตัวอย่างที่ 3: Kubernetes Development
+# ========================================
+cpu: 8
+memory: 16
+disk: 200
+
+arch: "host"
+runtime: "containerd"
+vm_type: "vz"
+
+# เปิดใช้งาน Kubernetes
+kubernetes:
+  enabled: true
+  version: "v1.28.0"  # ระบุ version (หรือใช้ "latest")
+  
+  # Kubernetes ingress
+  ingress:
+    enabled: true
+  
+  # Kubernetes resources
+  resources:
+    requests:
+      cpu: "2"
+      memory: "4Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+
+mounts:
+  - location: "~"
+    writable: true
+  - location: "~/k8s-manifests"
+    writable: true
+
+env:
+  KUBECONFIG: "~/.kube/config"
+
+dns:
+  - 8.8.8.8
+  - 1.1.1.1
+
+network:
+  address: true
+
+---
+
+# ========================================
+# ตัวอย่างที่ 4: Multi-Architecture Build
+# ========================================
+cpu: 8
+memory: 16
+disk: 150
+
+# สำหรับ build image หลาย architectures
+arch: "host"
+runtime: "docker"
+vm_type: "vz"
+rosetta: true
+
+kubernetes:
+  enabled: false
+
+mounts:
+  - location: "~"
+    writable: true
+  - location: "~/docker-builds"
+    writable: true
+
+# Provision script สำหรับติดตั้ง buildx
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+      # ติดตั้ง QEMU สำหรับ multi-arch builds
+      docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux
+      # สร้าง buildx builder
+      docker buildx create --name multiarch --driver docker-container --use || true
+      docker buildx inspect --bootstrap
+
+env:
+  DOCKER_BUILDKIT: "1"
+  DOCKER_CLI_EXPERIMENTAL: "enabled"
+
+---
+
+# ========================================
+# ตัวอย่างที่ 5: Minimal Configuration
+# ========================================
+cpu: 2
+memory: 4
+disk: 60
+
+arch: "host"
+runtime: "docker"
+vm_type: "qemu"
+
+kubernetes:
+  enabled: false
+
+# Mount เฉพาะ home directory
+mounts:
+  - location: "~"
+    writable: true
+
+---
+
+# ========================================
+# ตัวอย่างที่ 6: Full-featured Development Environment
+# ========================================
+cpu: 8
+memory: 20
+disk: 250
+
+arch: "host"
+runtime: "docker"
+vm_type: "vz"
+rosetta: true
+
+kubernetes:
+  enabled: true
+  version: "v1.28.0"
+  ingress:
+    enabled: true
+
+mounts:
+  - location: "~"
+    writable: true
+  - location: "~/Projects"
+    writable: true
+  - location: "~/Docker"
+    writable: true
+  - location: "/tmp"
+    writable: true
+
+# Provision scripts สำหรับติดตั้ง tools
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      
+      # อัพเดทระบบ
+      apt-get update
+      apt-get upgrade -y
+      
+      # ติดตั้ง essential tools
+      apt-get install -y \
+        vim \
+        curl \
+        wget \
+        git \
+        htop \
+        jq \
+        tree \
+        net-tools
+      
+      # ติดตั้ง kubectl plugins
+      curl -LO https://github.com/ahmetb/kubectx/releases/latest/download/kubectx
+      curl -LO https://github.com/ahmetb/kubectx/releases/latest/download/kubens
+      chmod +x kubectx kubens
+      mv kubectx kubens /usr/local/bin/
+      
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      
+      # ตั้งค่า Docker CLI plugins
+      mkdir -p ~/.docker/cli-plugins
+      
+      # ตั้งค่า kubeconfig
+      mkdir -p ~/.kube
+      
+      # สร้าง workspace directories
+      mkdir -p ~/workspace ~/bin
+
+env:
+  DOCKER_BUILDKIT: "1"
+  COMPOSE_DOCKER_CLI_BUILD: "1"
+  KUBECONFIG: "~/.kube/config"
+  EDITOR: "vim"
+
+dns:
+  - 8.8.8.8
+  - 8.8.4.4
+  - 1.1.1.1
+
+network:
+  address: true
+
+---
+
+# ========================================
+# ตัวอย่างที่ 7: CI/CD Simulation
+# ========================================
+cpu: 4
+memory: 8
+disk: 100
+
+arch: "host"
+runtime: "docker"
+vm_type: "qemu"
+
+kubernetes:
+  enabled: false
+
+mounts:
+  - location: "~"
+    writable: true
+  - location: "~/ci-builds"
+    writable: true
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      
+      # ติดตั้ง tools สำหรับ CI/CD
+      apt-get update
+      apt-get install -y \
+        build-essential \
+        python3 \
+        python3-pip \
+        nodejs \
+        npm \
+        git
+      
+      # ติดตั้ง Docker Compose
+      curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
+        -o /usr/local/bin/docker-compose
+      chmod +x /usr/local/bin/docker-compose
+
+env:
+  CI: "true"
+  DOCKER_BUILDKIT: "1"
+
+---
+
+# ========================================
+# ตัวอย่างที่ 8: Testing Environment
+# ========================================
+cpu: 4
+memory: 6
+disk: 80
+
+arch: "host"
+runtime: "containerd"
+vm_type: "qemu"
+
+kubernetes:
+  enabled: false
+
+mounts:
+  - location: "~"
+    writable: true
+  - location: "~/tests"
+    writable: true
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      
+      # ติดตั้ง testing tools
+      apt-get update
+      apt-get install -y \
+        curl \
+        wget \
+        jq \
+        net-tools \
+        iputils-ping
+      
+      # ติดตั้ง nerdctl
+      # (มาพร้อมกับ containerd runtime อยู่แล้ว)
+
+env:
+  TEST_ENV: "colima"
+
+---
+
+# ========================================
+# การใช้งาน Configuration File
+# ========================================
+
+# วิธีที่ 1: แก้ไข config โดยตรง
+# colima edit
+# (จะเปิด editor ให้แก้ไขไฟล์ ~/.colima/default/colima.yaml)
+
+# วิธีที่ 2: สร้าง profile ใหม่
+# colima start --profile development --edit
+# (จะสร้าง ~/.colima/development/colima.yaml)
+
+# วิธีที่ 3: Copy config และใช้กับ profile อื่น
+# cp ~/.colima/default/colima.yaml ~/.colima/testing/colima.yaml
+# colima edit --profile testing
+
+# หลังแก้ไข config ต้อง restart Colima
+# colima stop
+# colima start
+
+# หรือ restart ด้วยคำสั่งเดียว
+# colima restart
+
+# ========================================
+# หมายเหตุสำคัญ
+# ========================================
+
+# 1. การเปลี่ยนแปลง CPU, Memory, Disk ต้อง delete และ start ใหม่
+#    colima delete && colima start
+
+# 2. vm_type: vz ใช้ได้เฉพาะ macOS 13+ (Ventura ขึ้นไป)
+
+# 3. rosetta ใช้ได้เฉพาะกับ vm_type: vz บน Apple Silicon
+
+# 4. การเปลี่ยน runtime ต้อง delete และ start ใหม่
+
+# 5. Kubernetes จะใช้ resources เพิ่มเติมประมาณ 2GB RAM
+
+# 6. Mount writable: false = read-only mount (ปลอดภัยกว่า)
+
+# 7. ตรวจสอบ config ที่กำลังใช้ด้วย: colima status --verbose
+
+# 8. Backup config ก่อนแก้ไข: cp ~/.colima/default/colima.yaml ~/colima-backup.yaml
